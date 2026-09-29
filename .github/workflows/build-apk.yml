@@ -13,28 +13,14 @@ jobs:
 
     steps:
 
-      # ==========================================
-      # 1. Checkout Repository
-      # ==========================================
-
       - name: Checkout Repository
         uses: actions/checkout@v4
-
-
-      # ==========================================
-      # 2. Setup Java 17
-      # ==========================================
 
       - name: Setup Java 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
-
-
-      # ==========================================
-      # 3. Find ZIP File
-      # ==========================================
 
       - name: Find SurveyQuant ZIP
         shell: bash
@@ -52,41 +38,23 @@ jobs:
             -print -quit)
 
           if [ -z "$ZIP_FILE" ]; then
-
-            echo ""
-            echo "ERROR: SurveyQuant ZIP was not found."
-            echo ""
-
-            echo "Files currently inside repository:"
-            find "$GITHUB_WORKSPACE" \
-              -maxdepth 6 \
-              -type f \
-              -print \
-              | sort
-
+            echo "ERROR: ZIP FILE NOT FOUND"
             exit 1
           fi
 
-          echo ""
           echo "ZIP FOUND:"
           echo "$ZIP_FILE"
-          echo ""
 
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
 
-
-      # ==========================================
-      # 4. Extract ZIP
-      # ==========================================
-
-      - name: Extract SurveyQuant Project
+      - name: Extract Project
         shell: bash
         run: |
 
           set -e
 
           echo "=========================================="
-          echo "EXTRACTING SURVEYQUANT PROJECT"
+          echo "EXTRACTING PROJECT"
           echo "=========================================="
 
           rm -rf "$GITHUB_WORKSPACE/extracted_project"
@@ -96,22 +64,6 @@ jobs:
           unzip -o "$ZIP_FILE" \
             -d "$GITHUB_WORKSPACE/extracted_project"
 
-          echo ""
-          echo "EXTRACTION COMPLETED."
-          echo ""
-
-          echo "Extracted files:"
-          find "$GITHUB_WORKSPACE/extracted_project" \
-            -maxdepth 6 \
-            -type f \
-            -print \
-            | sort
-
-
-      # ==========================================
-      # 5. Find Android Gradle Project
-      # ==========================================
-
       - name: Locate Android Project
         shell: bash
         run: |
@@ -119,111 +71,58 @@ jobs:
           set -e
 
           echo "=========================================="
-          echo "SEARCHING FOR ANDROID GRADLE PROJECT"
+          echo "LOCATING ANDROID PROJECT"
           echo "=========================================="
 
-          GRADLEW=$(find "$GITHUB_WORKSPACE/extracted_project" \
+          PROJECT_DIR=$(find "$GITHUB_WORKSPACE/extracted_project" \
             -type f \
-            -name "gradlew" \
-            -print -quit)
+            -name "settings.gradle" \
+            -o \
+            -name "settings.gradle.kts" \
+            | head -n 1 \
+            | xargs -r dirname)
 
-          if [ -z "$GRADLEW" ]; then
-
-            echo ""
-            echo "ERROR: gradlew was not found."
-            echo ""
-
-            echo "Searching for Gradle files..."
-
-            find "$GITHUB_WORKSPACE/extracted_project" \
-              -type f \
-              \( \
-                -name "build.gradle" \
-                -o -name "build.gradle.kts" \
-                -o -name "settings.gradle" \
-                -o -name "settings.gradle.kts" \
-                -o -name "gradle-wrapper.properties" \
-              \) \
-              -print \
-              | sort
-
-            echo ""
-            echo "Possible Android project folders:"
-
-            find "$GITHUB_WORKSPACE/extracted_project" \
-              -type f \
-              -name "AndroidManifest.xml" \
-              -print \
-              | sort
-
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERROR: Android project was not found."
             exit 1
           fi
-
-          PROJECT_DIR=$(dirname "$GRADLEW")
 
           echo ""
           echo "ANDROID PROJECT FOUND:"
           echo "$PROJECT_DIR"
-          echo ""
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-
-      # ==========================================
-      # 6. Verify Gradle Project
-      # ==========================================
-
-      - name: Verify Android Project
+      - name: Show Project
         shell: bash
         run: |
 
-          set -e
-
           echo "=========================================="
-          echo "VERIFYING ANDROID PROJECT"
+          echo "PROJECT STRUCTURE"
           echo "=========================================="
-
-          if [ ! -f "$PROJECT_DIR/gradlew" ]; then
-            echo "ERROR: gradlew does not exist."
-            exit 1
-          fi
-
-          chmod +x "$PROJECT_DIR/gradlew"
-
-          echo ""
-          echo "Gradle wrapper:"
-          ls -lh "$PROJECT_DIR/gradlew"
-
-          echo ""
-          echo "Project files:"
 
           find "$PROJECT_DIR" \
-            -maxdepth 4 \
+            -maxdepth 5 \
             -type f \
-            -print \
             | sort
 
-
-      # ==========================================
-      # 7. Check Java
-      # ==========================================
-
-      - name: Check Java
+      - name: Install Gradle
         shell: bash
         run: |
 
+          set -e
+
           echo "=========================================="
-          echo "JAVA VERSION"
+          echo "INSTALLING GRADLE"
           echo "=========================================="
 
-          java -version
+          sudo apt-get update
 
+          sudo apt-get install -y gradle
 
-      # ==========================================
-      # 8. Check Gradle
-      # ==========================================
+          gradle --version
 
-      - name: Check Gradle
+      - name: Check Android Project
         shell: bash
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
@@ -231,17 +130,22 @@ jobs:
           set -e
 
           echo "=========================================="
-          echo "GRADLE VERSION"
+          echo "ANDROID PROJECT CHECK"
           echo "=========================================="
 
-          ./gradlew --version
+          echo ""
+          echo "settings.gradle:"
+          cat settings.gradle || true
 
+          echo ""
+          echo "Root build.gradle:"
+          cat build.gradle || true
 
-      # ==========================================
-      # 9. Clean Project
-      # ==========================================
+          echo ""
+          echo "App build.gradle:"
+          cat app/build.gradle || true
 
-      - name: Clean Project
+      - name: Build SurveyQuant
         shell: bash
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
@@ -249,110 +153,52 @@ jobs:
           set -e
 
           echo "=========================================="
-          echo "CLEANING PROJECT"
+          echo "BUILDING SURVEYQUANT"
           echo "=========================================="
 
-          ./gradlew clean \
+          gradle assembleDebug \
             --no-daemon \
             --stacktrace
 
-
-      # ==========================================
-      # 10. Build APK
-      # ==========================================
-
-      - name: Build SurveyQuant APK
-        shell: bash
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: |
-
-          set -e
-
-          echo "=========================================="
-          echo "BUILDING SURVEYQUANT APK"
-          echo "=========================================="
-
-          ./gradlew assembleDebug \
-            --no-daemon \
-            --stacktrace \
-            --info
-
-
-      # ==========================================
-      # 11. Find Generated APK
-      # ==========================================
-
-      - name: Find Generated APK
+      - name: Find APK
         shell: bash
         run: |
 
           set -e
 
           echo "=========================================="
-          echo "SEARCHING FOR GENERATED APK"
+          echo "SEARCHING FOR APK"
           echo "=========================================="
-
-          APK_COUNT=$(find "$PROJECT_DIR" \
-            -type f \
-            -name "*.apk" \
-            | wc -l)
-
-          echo ""
-          echo "APK COUNT: $APK_COUNT"
-          echo ""
-
-          if [ "$APK_COUNT" -eq 0 ]; then
-
-            echo "ERROR: No APK was generated."
-
-            echo ""
-            echo "Build directory:"
-            find "$PROJECT_DIR" \
-              -maxdepth 6 \
-              -type d \
-              -name "outputs" \
-              -print
-
-            exit 1
-          fi
-
-          echo "GENERATED APK FILES:"
-          find "$PROJECT_DIR" \
-            -type f \
-            -name "*.apk" \
-            -print
-
-
-      # ==========================================
-      # 12. Copy APK to Easy Location
-      # ==========================================
-
-      - name: Prepare APK Artifact
-        shell: bash
-        run: |
-
-          set -e
-
-          mkdir -p "$GITHUB_WORKSPACE/final_apk"
 
           APK_FILE=$(find "$PROJECT_DIR" \
             -type f \
             -name "*.apk" \
             -print -quit)
 
+          if [ -z "$APK_FILE" ]; then
+
+            echo ""
+            echo "ERROR: APK WAS NOT GENERATED."
+            echo ""
+
+            find "$PROJECT_DIR" \
+              -maxdepth 7 \
+              -type f \
+              | sort
+
+            exit 1
+          fi
+
+          echo ""
+          echo "APK FOUND:"
+          echo "$APK_FILE"
+
+          mkdir -p "$GITHUB_WORKSPACE/final_apk"
+
           cp "$APK_FILE" \
             "$GITHUB_WORKSPACE/final_apk/SurveyQuant-v1.0.46-debug.apk"
 
-          echo ""
-          echo "FINAL APK:"
-          ls -lh "$GITHUB_WORKSPACE/final_apk/SurveyQuant-v1.0.46-debug.apk"
-
-
-      # ==========================================
-      # 13. Upload APK
-      # ==========================================
-
-      - name: Upload SurveyQuant APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: SurveyQuant-v1.0.46-APK
