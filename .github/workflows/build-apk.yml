@@ -16,21 +16,19 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+
       - name: Setup Java 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Find SurveyQuant ZIP
+
+      - name: Find ZIP
         shell: bash
         run: |
 
           set -e
-
-          echo "=========================================="
-          echo "SEARCHING FOR SURVEYQUANT ZIP"
-          echo "=========================================="
 
           ZIP_FILE=$(find "$GITHUB_WORKSPACE" \
             -type f \
@@ -38,7 +36,7 @@ jobs:
             -print -quit)
 
           if [ -z "$ZIP_FILE" ]; then
-            echo "ERROR: ZIP FILE NOT FOUND"
+            echo "ERROR: ZIP NOT FOUND"
             exit 1
           fi
 
@@ -47,15 +45,12 @@ jobs:
 
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
 
+
       - name: Extract Project
         shell: bash
         run: |
 
           set -e
-
-          echo "=========================================="
-          echo "EXTRACTING PROJECT"
-          echo "=========================================="
 
           rm -rf "$GITHUB_WORKSPACE/extracted_project"
 
@@ -64,86 +59,83 @@ jobs:
           unzip -o "$ZIP_FILE" \
             -d "$GITHUB_WORKSPACE/extracted_project"
 
+
       - name: Locate Android Project
         shell: bash
         run: |
 
           set -e
 
-          echo "=========================================="
-          echo "LOCATING ANDROID PROJECT"
-          echo "=========================================="
-
           PROJECT_DIR=$(find "$GITHUB_WORKSPACE/extracted_project" \
             -type f \
-            -name "settings.gradle" \
-            -o \
-            -name "settings.gradle.kts" \
-            | head -n 1 \
-            | xargs -r dirname)
+            \( \
+              -name "settings.gradle" \
+              -o \
+              -name "settings.gradle.kts" \
+            \) \
+            -print -quit)
 
           if [ -z "$PROJECT_DIR" ]; then
-            echo "ERROR: Android project was not found."
+            echo "ERROR: settings.gradle NOT FOUND"
             exit 1
           fi
 
-          echo ""
-          echo "ANDROID PROJECT FOUND:"
+          PROJECT_DIR=$(dirname "$PROJECT_DIR")
+
+          echo "ANDROID PROJECT:"
           echo "$PROJECT_DIR"
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      - name: Show Project
-        shell: bash
-        run: |
 
-          echo "=========================================="
-          echo "PROJECT STRUCTURE"
-          echo "=========================================="
-
-          find "$PROJECT_DIR" \
-            -maxdepth 5 \
-            -type f \
-            | sort
-
-      - name: Install Gradle
-        shell: bash
-        run: |
-
-          set -e
-
-          echo "=========================================="
-          echo "INSTALLING GRADLE"
-          echo "=========================================="
-
-          sudo apt-get update
-
-          sudo apt-get install -y gradle
-
-          gradle --version
-
-      - name: Check Android Project
+      - name: Inspect Gradle Configuration
         shell: bash
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
 
-          set -e
+          echo "===================================="
+          echo "SETTINGS.GRADLE"
+          echo "===================================="
 
-          echo "=========================================="
-          echo "ANDROID PROJECT CHECK"
-          echo "=========================================="
-
-          echo ""
-          echo "settings.gradle:"
           cat settings.gradle || true
 
           echo ""
-          echo "Root build.gradle:"
+          echo "===================================="
+          echo "BUILD.GRADLE"
+          echo "===================================="
+
           cat build.gradle || true
 
           echo ""
-          echo "App build.gradle:"
+          echo "===================================="
+          echo "APP BUILD.GRADLE"
+          echo "===================================="
+
           cat app/build.gradle || true
+
+
+      - name: Install Gradle 8.2
+        shell: bash
+        run: |
+
+          set -e
+
+          echo "Installing Gradle 8.2"
+
+          wget -q \
+            https://services.gradle.org/distributions/gradle-8.2-bin.zip \
+            -O /tmp/gradle.zip
+
+          sudo mkdir -p /opt/gradle
+
+          sudo unzip -q \
+            /tmp/gradle.zip \
+            -d /opt/gradle
+
+          echo "/opt/gradle/gradle-8.2/bin" >> "$GITHUB_PATH"
+
+          /opt/gradle/gradle-8.2/bin/gradle --version
+
 
       - name: Build SurveyQuant
         shell: bash
@@ -152,13 +144,14 @@ jobs:
 
           set -e
 
-          echo "=========================================="
+          echo "===================================="
           echo "BUILDING SURVEYQUANT"
-          echo "=========================================="
+          echo "===================================="
 
           gradle assembleDebug \
             --no-daemon \
             --stacktrace
+
 
       - name: Find APK
         shell: bash
@@ -166,30 +159,16 @@ jobs:
 
           set -e
 
-          echo "=========================================="
-          echo "SEARCHING FOR APK"
-          echo "=========================================="
-
           APK_FILE=$(find "$PROJECT_DIR" \
             -type f \
             -name "*.apk" \
             -print -quit)
 
           if [ -z "$APK_FILE" ]; then
-
-            echo ""
-            echo "ERROR: APK WAS NOT GENERATED."
-            echo ""
-
-            find "$PROJECT_DIR" \
-              -maxdepth 7 \
-              -type f \
-              | sort
-
+            echo "ERROR: APK NOT GENERATED"
             exit 1
           fi
 
-          echo ""
           echo "APK FOUND:"
           echo "$APK_FILE"
 
@@ -197,6 +176,7 @@ jobs:
 
           cp "$APK_FILE" \
             "$GITHUB_WORKSPACE/final_apk/SurveyQuant-v1.0.46-debug.apk"
+
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
